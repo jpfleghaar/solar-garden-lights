@@ -1,28 +1,23 @@
 # =============== WIRING (reference) ===============
 # Board: DFRobot FireBeetle 2 ESP32-C6 (esp32-c6-devkitc-1). Driver: 4-channel driver
-# module with a shared enable/standby pin (EEP) for all 4 channels - exact model not
-# yet confirmed (check silkscreen/datasheet if it has separate logic-VCC/output-VM
-# pins instead of one combined supply pin).
+# module with a shared enable/standby pin (EEP) - exact model not yet confirmed
+# (check silkscreen/datasheet if it has separate logic-VCC/output-VM pins instead of
+# one combined supply pin).
 #
 # Control signals (board -> driver, logic level):
-#   GPIO14 -> driver IN4 (PWM)  -> OUT4 -> Ambient-light LED string
-#   GPIO15 -> driver IN2 (PWM)  -> OUT2 -> Outdoor-light LED string
-#   GPIO6  -> driver EEP (enable/standby, shared across both channels)
-#   GPIO3  -> driver IN1 (direction, outdoor channel), permanently LOW - see output: below
+#   GPIO14 -> driver IN4 (PWM)  -> OUT4 -> LED string
+#   GPIO6  -> driver EEP (enable/standby)
 #   GPIO9  -> DevKit's BOOT button, to GND (hold 3s = WiFi reset)
 #
-# ASSUMPTION, NOT VERIFIED: driver IN3 is hardwired to GND (no GPIO needed, DC
-# operation only needs one polarity per channel) - analogous to the original
-# firmware (see AGENTS.md wiring reference). IN1 (the outdoor counterpart) is NOT
-# tied to GND, but to GPIO3, permanently driven LOW (electrically identical to GND,
-# but without needing a second free GND pad on the driver - both GND pads were
-# already in use).
+# Driver IN3 is hardwired directly to GND (no GPIO needed, DC operation only needs
+# one polarity) - there is no separate direction pin, matching the original
+# firmware (see AGENTS.md wiring reference and docs/wiring.md).
 #
 # Driver power supply (battery -> driver, NOT through the board):
 #   Driver VCC/VM straight to the raw battery leads (a tap/splice on the battery
 #   line, separate from the normal JST connection battery->board). NOT to VIN (charge
 #   input only, no load output) or 3V3 (fixed 3.3V, would defeat the voltage
-#   compensation in pwm_*_compensated, which assumes the real, sagging battery
+#   compensation in pwm_compensated, which assumes the real, sagging battery
 #   voltage).
 #
 # Ground: shared across battery, board, and driver - otherwise the logic-level
@@ -38,8 +33,8 @@
 # 3.2-3.5V.
 
 substitutions:
-  battery_low_mv: "3050"      # Below this voltage: light(s) off
-  battery_recover_mv: "3150"  # Above this voltage: light(s) allowed again
+  battery_low_mv: "3050"      # Below this voltage: light off
+  battery_recover_mv: "3150"  # Above this voltage: light allowed again
   battery_empty_mv: "3000"    # 0% reference
   battery_full_mv: "4200"     # 100% reference
   led_target_mv: "3500"       # Target voltage at the LED string (voltage compensation)
@@ -51,9 +46,7 @@ esphome:
     priority: 600
     then:
       - switch.turn_off: driver_enable
-      - output.turn_off: ledc_ambient
-      - output.turn_off: ledc_outdoor
-      - output.turn_off: outdoor_dir
+      - output.turn_off: ledc_light
 
 esp32:
   board: esp32-c6-devkitc-1
@@ -127,27 +120,22 @@ sensor:
             if (mv > 2000 && mv <= ${battery_low_mv}) {
               if (!id(low_battery)) {
                 id(low_battery) = true;
-                ESP_LOGW("battery", "Battery critical (%.2f V) - turning light(s) off!", x);
-                auto call_a = id(ambient_light).turn_off();
-                call_a.perform();
-                auto call_o = id(outdoor_light).turn_off();
-                call_o.perform();
+                ESP_LOGW("battery", "Battery critical (%.2f V) - turning light off!", x);
+                auto call = id(outdoor_light).turn_off();
+                call.perform();
               }
             } else if (mv <= 2000) {
               ESP_LOGW("battery", "Implausible reading (%.2f V) - check ADC/wiring. Deep-discharge protection NOT triggered.", x);
             } else if (mv >= ${battery_recover_mv}) {
               if (id(low_battery)) {
                 id(low_battery) = false;
-                ESP_LOGI("battery", "Battery recovered (%.2f V) - light(s) available again", x);
+                ESP_LOGI("battery", "Battery recovered (%.2f V) - light available again", x);
                 // Same as the original: no auto re-enable, the user has to switch it back on manually.
               }
             }
 
             // Re-apply the voltage compensation (applyLight()) with the fresh
-            // reading, if a light is currently on.
-            if (id(ambient_light).current_values.is_on()) {
-              id(ambient_light).turn_on().perform();
-            }
+            // reading, if the light is currently on.
             if (id(outdoor_light).current_values.is_on()) {
               id(outdoor_light).turn_on().perform();
             }
@@ -185,9 +173,9 @@ sensor:
           min_value: 0
           max_value: 100
 
-# =============== DRIVER ENABLE (shared across both channels) ===============
+# =============== DRIVER ENABLE ===============
 # Corresponds to PIN_ENABLE/EEP: LOW = driver output stage (and its own quiescent
-# draw) off. HIGH as soon as at least one light is on, LOW once both are off.
+# draw) off. HIGH while the light is on, LOW once it's off.
 switch:
   - platform: gpio
     id: driver_enable
@@ -195,78 +183,34 @@ switch:
     internal: true
     restore_mode: ALWAYS_OFF
 
-# =============== PWM OUTPUTS ===============
+# =============== PWM OUTPUT ===============
 output:
   - platform: ledc
-    id: ledc_ambient
+    id: ledc_light
     pin: GPIO14
     frequency: 20000 Hz   # PWM_FREQ
     zero_means_zero: true   # prevents a tiny residual duty cycle at 0% (carried over from an earlier config)
-  - platform: ledc
-    id: ledc_outdoor
-    pin: GPIO15
-    frequency: 20000 Hz
-    zero_means_zero: true
 
-  # Driver IN1 (direction, outdoor channel) - permanently LOW instead of hardwired to
-  # GND, because both GND pads on the driver are already in use elsewhere. Only set
-  # to LOW once at boot (see esphome.on_boot above) and never touched again after
-  # that.
-  - platform: gpio
-    id: outdoor_dir
-    pin: GPIO3
-
-  # Voltage-compensated outputs, a counterpart to applyLight()'s
+  # Voltage-compensated output, a counterpart to applyLight()'s
   # `duty = currentBrightness * voltageRatio` (voltageRatio = LED_TARGET_MV / lastBatteryMV,
   # capped at 100% - can't boost above the battery's own voltage).
   - platform: template
-    id: pwm_ambient_compensated
+    id: pwm_compensated
     type: float
     write_action:
       - lambda: |-
           float ratio = (float)${led_target_mv} / (float) max(id(battery_mv), 1);
           if (ratio > 1.0f) ratio = 1.0f;
-          id(ledc_ambient).set_level(state * ratio);
-  - platform: template
-    id: pwm_outdoor_compensated
-    type: float
-    write_action:
-      - lambda: |-
-          float ratio = (float)${led_target_mv} / (float) max(id(battery_mv), 1);
-          if (ratio > 1.0f) ratio = 1.0f;
-          id(ledc_outdoor).set_level(state * ratio);
+          id(ledc_light).set_level(state * ratio);
 
-# =============== LIGHTS ===============
+# =============== LIGHT ===============
 # V0 (switch) + V1 (dimmer 0-100%) are a single dimmable light entity here - HA/the
 # web UI deliver on/off and brightness through the same entity anyway.
 light:
   - platform: monochromatic
-    name: "Ambient Light"
-    id: ambient_light
-    output: pwm_ambient_compensated
-    default_transition_length: 0s
-    restore_mode: ALWAYS_OFF
-    on_turn_on:
-      - if:
-          condition:
-            lambda: 'return id(low_battery);'
-          then:
-            - light.turn_off: ambient_light   # Deep-discharge protection: block turning on
-          else:
-            - switch.turn_on: driver_enable
-    on_turn_off:
-      - if:
-          condition:
-            and:
-              - light.is_off: ambient_light
-              - light.is_off: outdoor_light
-          then:
-            - switch.turn_off: driver_enable
-
-  - platform: monochromatic
     name: "Outdoor Light"
     id: outdoor_light
-    output: pwm_outdoor_compensated
+    output: pwm_compensated
     default_transition_length: 0s
     restore_mode: ALWAYS_OFF
     on_turn_on:
@@ -278,13 +222,7 @@ light:
           else:
             - switch.turn_on: driver_enable
     on_turn_off:
-      - if:
-          condition:
-            and:
-              - light.is_off: ambient_light
-              - light.is_off: outdoor_light
-          then:
-            - switch.turn_off: driver_enable
+      - switch.turn_off: driver_enable
 
 # =============== RESET BUTTON (BOOT button, PIN_RESET_BTN) ===============
 # Holding for 3s erases the WiFi credentials and restarts - corresponds to
@@ -318,11 +256,9 @@ button:
   - platform: restart
     name: "Restart"
 
-# =============== AUTOMATION: OUTDOOR LIGHT ===============
-# Carried over from an earlier config of mine, deliberately only for Outdoor Light
-# here (not Ambient Light) - fits the name/purpose ("outdoor", tied to dusk/dawn),
-# while Ambient Light stays purely manual as before. Apply the same triggers to
-# ambient_light too if needed.
+# =============== AUTOMATION ===============
+# Carried over from an earlier config of mine. Dusk/dawn-based, fits the name/
+# purpose ("outdoor", tied to the sun).
 #
 # time: uses `sntp` here instead of `homeassistant` (as in the old config), so the
 # schedule still works even without Home Assistant connected - matching the
