@@ -1,0 +1,7 @@
+.pio
+.vscode/
+AGENTS.md
+esphome/secrets.yaml
+esphome/.esphome/
+sdkconfig.esp32-c6-devkitc-1
+CMakeLists.txt

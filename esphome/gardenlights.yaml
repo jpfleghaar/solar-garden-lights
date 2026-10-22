@@ -1,0 +1,365 @@
+# =============== VERKABELUNG (Referenz) ===============
+# Board: DFRobot FireBeetle 2 ESP32-C6 (esp32-c6-devkitc-1). Treiber: 4-Kanal-Treiber-
+# modul mit gemeinsamem Enable/Standby-Pin (EEP) für alle 4 Kanäle - genauer Typ noch
+# nicht bestätigt (Silkscreen/Datenblatt prüfen, falls das getrennte Logik-VCC/Output-VM
+# Pins hat statt einem kombinierten Versorgungspin).
+#
+# Steuersignale (Board -> Treiber, Logikpegel):
+#   GPIO14 -> Treiber IN4 (PWM)  -> OUT4 -> Ambient-Light-LED-Kette
+#   GPIO15 -> Treiber IN2 (PWM)  -> OUT2 -> Outdoor-Light-LED-Kette
+#   GPIO6  -> Treiber EEP (Enable/Standby, gemeinsam für beide Kanäle)
+#   GPIO3  -> Treiber IN1 (Richtung Outdoor-Kanal), dauerhaft LOW - siehe output: unten
+#   GPIO9  -> BOOT-Taste des DevKits, gegen GND (3s halten = WLAN-Reset)
+#
+# ANNAHME, NICHT VERIFIZIERT: Treiber IN3 ist fest auf GND verdrahtet (kein GPIO nötig,
+# DC-Betrieb braucht nur eine Polarität je Kanal) - analog zur Original-Firmware (siehe
+# AGENTS.md Wiring-Referenz). IN1 (Outdoor-Gegenstück) liegt NICHT auf GND, sondern an
+# GPIO3, dauerhaft LOW geschaltet (elektrisch identisch zu GND, aber ohne einen zweiten
+# freien GND-Pad am Treiber zu brauchen - beide GND-Pads waren schon belegt).
+#
+# Treiber-Versorgung (Akku -> Treiber, NICHT über das Board):
+#   Treiber VCC/VM direkt an die rohen Akku-Leitungen (Abzweig/Splice an der Akku-
+#   Leitung, getrennt vom normalen JST-Anschluss Akku->Board). NICHT an VIN (nur
+#   Lade-Eingang, kein Lastausgang) oder 3V3 (feste 3.3V, würde die Spannungs-
+#   kompensation in pwm_*_compensated unterlaufen, die von der echten, durchhängenden
+#   Akkuspannung ausgeht).
+#
+# Masse: gemeinsam über Akku, Board und Treiber - sonst fehlt den Logikpegel-Signalen
+# vom ESP die gültige Referenz am Treiber.
+#
+# Akku-Messung: GPIO0 (ADC1) liest die Akkuspannung über einen Spannungsteiler
+# (aktuell als 2:1 angenommen, siehe `multiply: 2.0` im sensor: unten - noch nicht per
+# Multimeter gegengeprüft).
+#
+# Vorsicht bei vollem Akku (4.2V) ohne die Spannungskompensation unten: der Treiber ist
+# ein reiner Schalter, keine Konstantspannungsquelle - ohne Kompensation läge die volle
+# Akkuspannung 1:1 an der LED-Kette an, die nur für 3.2-3.5V ausgelegt ist.
+
+substitutions:
+  battery_low_mv: "3050"      # Unter dieser Spannung: Licht(er) aus
+  battery_recover_mv: "3150"  # Über dieser Spannung: Licht(er) wieder erlaubt
+  battery_empty_mv: "3000"    # 0% Referenz
+  battery_full_mv: "4200"     # 100% Referenz
+  led_target_mv: "3500"       # Ziel-Spannung an der LED-Kette (Spannungskompensation)
+
+esphome:
+  name: outdooresp32
+  friendly_name: OutdoorESP32
+  on_boot:
+    priority: 600
+    then:
+      - switch.turn_off: driver_enable
+      - output.turn_off: ledc_ambient
+      - output.turn_off: ledc_outdoor
+      - output.turn_off: outdoor_dir
+
+esp32:
+  board: esp32-c6-devkitc-1
+  framework:
+    type: esp-idf
+  cpu_frequency: 80MHz
+# Enable logging
+logger:
+  baud_rate: 115200
+# Enable Home Assistant API
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+web_server:
+  version: 3
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  power_save_mode: light
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Outdooresp Fallback Hotspot"
+    password: !secret ap_password
+
+captive_portal:
+
+globals:
+  - id: battery_mv
+    type: int
+    initial_value: "${battery_full_mv}"
+  - id: low_battery
+    type: bool
+    initial_value: "false"
+
+# =============== AKKU ===============
+sensor:
+  # PIN_BAT / readBatteryMV(): Spannungsteiler halbiert die Akkuspannung 2:1 vor dem ADC,
+  # daher der *2 Filter - wie im Original noch nicht per Multimeter gegengeprüft (siehe
+  # AGENTS.md Follow-Up "Re-check battery divider calibration").
+  - platform: adc
+    pin: GPIO0
+    id: battery_voltage
+    name: "Battery Voltage"
+    unit_of_measurement: "V"
+    device_class: voltage
+    state_class: measurement
+    accuracy_decimals: 2
+    attenuation: 12db
+    samples: 8   # BATTERY_SAMPLES - Original mittelt 8 ADC-Samples, hier fehlte das bisher
+    update_interval: 60s   # abweichend vom Original (BATTERY_SYNC_MS = 5 min), hier 1 min
+    filters:
+      - multiply: 2.0
+    on_value:
+      then:
+        - lambda: |-
+            int mv = (int)(x * 1000.0f);
+            id(battery_mv) = mv;
+
+            // Plausibilitäts-Untergrenze (2000 mV) bevor ein Tiefentladeschutz ausgelöst
+            // wird: ein einzelner ADC-Ausreißer/Startwert nahe 0 V soll nicht faelschlich
+            // als "Akku leer" gewertet werden. Idee aus einer frueheren eigenen Config
+            // uebernommen (dort per x > 2.5 && x < 3.30 realisiert).
+            if (mv > 2000 && mv <= ${battery_low_mv}) {
+              if (!id(low_battery)) {
+                id(low_battery) = true;
+                ESP_LOGW("battery", "Akku kritisch (%.2f V) - Licht(er) aus!", x);
+                auto call_a = id(ambient_light).turn_off();
+                call_a.perform();
+                auto call_o = id(outdoor_light).turn_off();
+                call_o.perform();
+              }
+            } else if (mv <= 2000) {
+              ESP_LOGW("battery", "Unplausibler Messwert (%.2f V) - ADC/Verkabelung pruefen. Tiefentladeschutz NICHT ausgeloest.", x);
+            } else if (mv >= ${battery_recover_mv}) {
+              if (id(low_battery)) {
+                id(low_battery) = false;
+                ESP_LOGI("battery", "Akku erholt (%.2f V) - Licht(er) wieder moeglich", x);
+                // Wie im Original: kein Auto-Wiedereinschalten, Nutzer muss aktiv schalten.
+              }
+            }
+
+            // Spannungskompensation (applyLight()) mit dem frischen Messwert neu anwenden,
+            // falls gerade ein Licht an ist.
+            if (id(ambient_light).current_values.is_on()) {
+              id(ambient_light).turn_on().perform();
+            }
+            if (id(outdoor_light).current_values.is_on()) {
+              id(outdoor_light).turn_on().perform();
+            }
+
+  # Ersetzt die ursprünglich lineare mvToPct()-Interpolation durch eine stückweise
+  # Kurve entlang der echten LiPo-Entladekurve (flach in der Mitte, steil nahe leer) -
+  # genau der Punkt, den AGENTS.md unter "linear .. nicht vergleichbar über die Kurve"
+  # als offenes Problem nennt. Stützpunkte sind Richtwerte für eine 1S-LiPo zwischen
+  # BATTERY_EMPTY_MV (3.00 V) und BATTERY_FULL_MV (4.20 V) - nicht multimeter-verifiziert,
+  # bei Bedarf mit echten Messpunkten der eigenen Zelle nachjustieren.
+  # `copy`-Pattern (statt eigenem Template+update_interval) aus einer frueheren eigenen
+  # Config übernommen - aktualisiert automatisch mit jedem neuen battery_voltage-Wert.
+  - platform: copy
+    source_id: battery_voltage
+    name: "Battery Percentage"
+    id: battery_percentage
+    unit_of_measurement: "%"
+    device_class: battery
+    state_class: measurement
+    accuracy_decimals: 0
+    filters:
+      - calibrate_linear:
+          - 3.00 -> 0
+          - 3.30 -> 10
+          - 3.50 -> 20
+          - 3.65 -> 35
+          - 3.75 -> 50
+          - 3.85 -> 65
+          - 3.95 -> 78
+          - 4.05 -> 90
+          - 4.20 -> 100
+      - clamp:
+          min_value: 0
+          max_value: 100
+
+# =============== TREIBER-ENABLE (gemeinsam für beide Kanäle) ===============
+# Entspricht PIN_ENABLE/EEP: LOW = Treiber-Ausgangsstufe (und ihr eigener Ruhestrom) aus.
+# HIGH sobald mindestens ein Licht an ist, LOW sobald beide aus sind.
+switch:
+  - platform: gpio
+    id: driver_enable
+    pin: GPIO6
+    internal: true
+    restore_mode: ALWAYS_OFF
+
+# =============== PWM-AUSGÄNGE ===============
+output:
+  - platform: ledc
+    id: ledc_ambient
+    pin: GPIO14
+    frequency: 20000 Hz   # PWM_FREQ
+    zero_means_zero: true   # verhindert minimalen Rest-Tastgrad bei 0% (aus frueherer Config übernommen)
+  - platform: ledc
+    id: ledc_outdoor
+    pin: GPIO15
+    frequency: 20000 Hz
+    zero_means_zero: true
+
+  # Treiber IN1 (Richtung Outdoor-Kanal) - dauerhaft LOW statt fest auf GND verdrahtet,
+  # weil beide GND-Pads am Treiber schon anderweitig belegt sind. Wird nur einmal beim
+  # Boot auf LOW gesetzt (siehe esphome.on_boot oben) und danach nie mehr angefasst.
+  - platform: gpio
+    id: outdoor_dir
+    pin: GPIO3
+
+  # Spannungskompensierte Ausgänge, ein Pendant zu applyLight()'s
+  # `duty = currentBrightness * voltageRatio` (voltageRatio = LED_TARGET_MV / lastBatteryMV,
+  # gedeckelt auf 100% - kein Boost über die Akkuspannung hinaus möglich).
+  - platform: template
+    id: pwm_ambient_compensated
+    type: float
+    write_action:
+      - lambda: |-
+          float ratio = (float)${led_target_mv} / (float) max(id(battery_mv), 1);
+          if (ratio > 1.0f) ratio = 1.0f;
+          id(ledc_ambient).set_level(state * ratio);
+  - platform: template
+    id: pwm_outdoor_compensated
+    type: float
+    write_action:
+      - lambda: |-
+          float ratio = (float)${led_target_mv} / (float) max(id(battery_mv), 1);
+          if (ratio > 1.0f) ratio = 1.0f;
+          id(ledc_outdoor).set_level(state * ratio);
+
+# =============== LICHTER ===============
+# V0 (Schalter) + V1 (Dimmer 0-100%) sind hier ein einziges dimmbares light-Entity -
+# HA/die Weboberfläche liefern Ein/Aus und Helligkeit ohnehin über dieselbe Entity.
+light:
+  - platform: monochromatic
+    name: "Ambient Light"
+    id: ambient_light
+    output: pwm_ambient_compensated
+    default_transition_length: 0s
+    restore_mode: ALWAYS_OFF
+    on_turn_on:
+      - if:
+          condition:
+            lambda: 'return id(low_battery);'
+          then:
+            - light.turn_off: ambient_light   # Tiefentladeschutz: Einschalten blockieren
+          else:
+            - switch.turn_on: driver_enable
+    on_turn_off:
+      - if:
+          condition:
+            and:
+              - light.is_off: ambient_light
+              - light.is_off: outdoor_light
+          then:
+            - switch.turn_off: driver_enable
+
+  - platform: monochromatic
+    name: "Outdoor Light"
+    id: outdoor_light
+    output: pwm_outdoor_compensated
+    default_transition_length: 0s
+    restore_mode: ALWAYS_OFF
+    on_turn_on:
+      - if:
+          condition:
+            lambda: 'return id(low_battery);'
+          then:
+            - light.turn_off: outdoor_light   # Tiefentladeschutz: Einschalten blockieren
+          else:
+            - switch.turn_on: driver_enable
+    on_turn_off:
+      - if:
+          condition:
+            and:
+              - light.is_off: ambient_light
+              - light.is_off: outdoor_light
+          then:
+            - switch.turn_off: driver_enable
+
+# =============== RESET-TASTE (BOOT-Button, PIN_RESET_BTN) ===============
+# 3s halten löscht WLAN-Zugangsdaten und startet neu - entspricht checkResetButton() /
+# WiFiManager::resetSettings() in main.cpp. GPIO9 ist auf dem C6 ein Boot-Strapping-Pin;
+# das ist unkritisch, solange er (wie hier über INPUT_PULLUP) nur beim manuellen Halten
+# aktiv auf LOW gezogen wird, nicht dauerhaft.
+binary_sensor:
+  - platform: gpio
+    id: reset_button
+    internal: true
+    pin:
+      number: GPIO9
+      mode:
+        input: true
+        pullup: true
+      inverted: true
+    on_press:
+      then:
+        - delay: 3s
+        - if:
+            condition:
+              binary_sensor.is_on: reset_button
+            then:
+              - logger.log: "Reset: Loesche WLAN-Daten, starte neu..."
+              - button.press: factory_reset_button
+
+button:
+  - platform: factory_reset
+    id: factory_reset_button
+    internal: true
+  - platform: restart
+    name: "Restart"
+
+# =============== AUTOMATIK: OUTDOOR LIGHT ===============
+# Aus einer früheren eigenen Config übernommen, hier bewusst nur für Outdoor Light (nicht
+# Ambient Light) - passt zum Namen/Zweck ("outdoor", an der Dämmerung orientiert), während
+# Ambient Light wie bisher rein manuell bleibt. Bei Bedarf einfach dieselben Trigger auch
+# auf ambient_light anwenden.
+#
+# time: nutzt hier `sntp` statt `homeassistant` (wie in der alten Config), damit die
+# Zeitplan-Funktion auch ohne verbundenes Home Assistant funktioniert - passend zum
+# `web_server` oben, der das Gerät ausdrücklich auch standalone bedienbar machen soll.
+time:
+  - platform: sntp
+    id: sntp_time
+    on_time:
+      - hours: 23
+        minutes: 0
+        seconds: 0
+        then:
+          - if:
+              condition:
+                light.is_on: outdoor_light
+              then:
+                - light.turn_on:
+                    id: outdoor_light
+                    brightness: 25%
+                    transition_length: 30s
+      - hours: 0
+        minutes: 30
+        seconds: 0
+        then:
+          - light.turn_off: outdoor_light
+
+# Koordinaten aus secrets.yaml (nicht im Repo, siehe secrets.yaml.example) - bei Bedarf
+# anpassen, falls das ein anderer Standort ist.
+sun:
+  latitude: !secret location_latitude
+  longitude: !secret location_longitude
+  on_sunset:
+    - elevation: -4°
+      then:
+        - if:
+            condition:
+              lambda: 'return !id(low_battery);'
+            then:
+              - light.turn_on:
+                  id: outdoor_light
+                  brightness: 70%
+                  transition_length: 10s
+  on_sunrise:
+    - elevation: -4°
+      then:
+        - light.turn_off: outdoor_light
