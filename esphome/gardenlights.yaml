@@ -1,46 +1,48 @@
-# =============== VERKABELUNG (Referenz) ===============
-# Board: DFRobot FireBeetle 2 ESP32-C6 (esp32-c6-devkitc-1). Treiber: 4-Kanal-Treiber-
-# modul mit gemeinsamem Enable/Standby-Pin (EEP) für alle 4 Kanäle - genauer Typ noch
-# nicht bestätigt (Silkscreen/Datenblatt prüfen, falls das getrennte Logik-VCC/Output-VM
-# Pins hat statt einem kombinierten Versorgungspin).
+# =============== WIRING (reference) ===============
+# Board: DFRobot FireBeetle 2 ESP32-C6 (esp32-c6-devkitc-1). Driver: 4-channel driver
+# module with a shared enable/standby pin (EEP) for all 4 channels - exact model not
+# yet confirmed (check silkscreen/datasheet if it has separate logic-VCC/output-VM
+# pins instead of one combined supply pin).
 #
-# Steuersignale (Board -> Treiber, Logikpegel):
-#   GPIO14 -> Treiber IN4 (PWM)  -> OUT4 -> Ambient-Light-LED-Kette
-#   GPIO15 -> Treiber IN2 (PWM)  -> OUT2 -> Outdoor-Light-LED-Kette
-#   GPIO6  -> Treiber EEP (Enable/Standby, gemeinsam für beide Kanäle)
-#   GPIO3  -> Treiber IN1 (Richtung Outdoor-Kanal), dauerhaft LOW - siehe output: unten
-#   GPIO9  -> BOOT-Taste des DevKits, gegen GND (3s halten = WLAN-Reset)
+# Control signals (board -> driver, logic level):
+#   GPIO14 -> driver IN4 (PWM)  -> OUT4 -> Ambient-light LED string
+#   GPIO15 -> driver IN2 (PWM)  -> OUT2 -> Outdoor-light LED string
+#   GPIO6  -> driver EEP (enable/standby, shared across both channels)
+#   GPIO3  -> driver IN1 (direction, outdoor channel), permanently LOW - see output: below
+#   GPIO9  -> DevKit's BOOT button, to GND (hold 3s = WiFi reset)
 #
-# ANNAHME, NICHT VERIFIZIERT: Treiber IN3 ist fest auf GND verdrahtet (kein GPIO nötig,
-# DC-Betrieb braucht nur eine Polarität je Kanal) - analog zur Original-Firmware (siehe
-# AGENTS.md Wiring-Referenz). IN1 (Outdoor-Gegenstück) liegt NICHT auf GND, sondern an
-# GPIO3, dauerhaft LOW geschaltet (elektrisch identisch zu GND, aber ohne einen zweiten
-# freien GND-Pad am Treiber zu brauchen - beide GND-Pads waren schon belegt).
+# ASSUMPTION, NOT VERIFIED: driver IN3 is hardwired to GND (no GPIO needed, DC
+# operation only needs one polarity per channel) - analogous to the original
+# firmware (see AGENTS.md wiring reference). IN1 (the outdoor counterpart) is NOT
+# tied to GND, but to GPIO3, permanently driven LOW (electrically identical to GND,
+# but without needing a second free GND pad on the driver - both GND pads were
+# already in use).
 #
-# Treiber-Versorgung (Akku -> Treiber, NICHT über das Board):
-#   Treiber VCC/VM direkt an die rohen Akku-Leitungen (Abzweig/Splice an der Akku-
-#   Leitung, getrennt vom normalen JST-Anschluss Akku->Board). NICHT an VIN (nur
-#   Lade-Eingang, kein Lastausgang) oder 3V3 (feste 3.3V, würde die Spannungs-
-#   kompensation in pwm_*_compensated unterlaufen, die von der echten, durchhängenden
-#   Akkuspannung ausgeht).
+# Driver power supply (battery -> driver, NOT through the board):
+#   Driver VCC/VM straight to the raw battery leads (a tap/splice on the battery
+#   line, separate from the normal JST connection battery->board). NOT to VIN (charge
+#   input only, no load output) or 3V3 (fixed 3.3V, would defeat the voltage
+#   compensation in pwm_*_compensated, which assumes the real, sagging battery
+#   voltage).
 #
-# Masse: gemeinsam über Akku, Board und Treiber - sonst fehlt den Logikpegel-Signalen
-# vom ESP die gültige Referenz am Treiber.
+# Ground: shared across battery, board, and driver - otherwise the logic-level
+# signals from the ESP have no valid reference at the driver.
 #
-# Akku-Messung: GPIO0 (ADC1) liest die Akkuspannung über einen Spannungsteiler
-# (aktuell als 2:1 angenommen, siehe `multiply: 2.0` im sensor: unten - noch nicht per
-# Multimeter gegengeprüft).
+# Battery measurement: GPIO0 (ADC1) reads the battery voltage through a voltage
+# divider (currently assumed 2:1, see `multiply: 2.0` in sensor: below - not yet
+# cross-checked with a multimeter).
 #
-# Vorsicht bei vollem Akku (4.2V) ohne die Spannungskompensation unten: der Treiber ist
-# ein reiner Schalter, keine Konstantspannungsquelle - ohne Kompensation läge die volle
-# Akkuspannung 1:1 an der LED-Kette an, die nur für 3.2-3.5V ausgelegt ist.
+# Caution at a full battery (4.2V) without the voltage compensation below: the
+# driver is a plain switch, not a constant-voltage source - without compensation the
+# full battery voltage would reach the LED string 1:1, which is only rated for
+# 3.2-3.5V.
 
 substitutions:
-  battery_low_mv: "3050"      # Unter dieser Spannung: Licht(er) aus
-  battery_recover_mv: "3150"  # Über dieser Spannung: Licht(er) wieder erlaubt
-  battery_empty_mv: "3000"    # 0% Referenz
-  battery_full_mv: "4200"     # 100% Referenz
-  led_target_mv: "3500"       # Ziel-Spannung an der LED-Kette (Spannungskompensation)
+  battery_low_mv: "3050"      # Below this voltage: light(s) off
+  battery_recover_mv: "3150"  # Above this voltage: light(s) allowed again
+  battery_empty_mv: "3000"    # 0% reference
+  battery_full_mv: "4200"     # 100% reference
+  led_target_mv: "3500"       # Target voltage at the LED string (voltage compensation)
 
 esphome:
   name: outdooresp32
@@ -93,11 +95,12 @@ globals:
     type: bool
     initial_value: "false"
 
-# =============== AKKU ===============
+# =============== BATTERY ===============
 sensor:
-  # PIN_BAT / readBatteryMV(): Spannungsteiler halbiert die Akkuspannung 2:1 vor dem ADC,
-  # daher der *2 Filter - wie im Original noch nicht per Multimeter gegengeprüft (siehe
-  # AGENTS.md Follow-Up "Re-check battery divider calibration").
+  # PIN_BAT / readBatteryMV(): the voltage divider halves the battery voltage 2:1
+  # before the ADC, hence the *2 filter - not yet cross-checked with a multimeter,
+  # same as in the original (see AGENTS.md follow-up "Re-check battery divider
+  # calibration").
   - platform: adc
     pin: GPIO0
     id: battery_voltage
@@ -107,8 +110,8 @@ sensor:
     state_class: measurement
     accuracy_decimals: 2
     attenuation: 12db
-    samples: 8   # BATTERY_SAMPLES - Original mittelt 8 ADC-Samples, hier fehlte das bisher
-    update_interval: 60s   # abweichend vom Original (BATTERY_SYNC_MS = 5 min), hier 1 min
+    samples: 8   # BATTERY_SAMPLES - the original averages 8 ADC samples, that was missing here until now
+    update_interval: 60s   # differs from the original (BATTERY_SYNC_MS = 5 min), here 1 min
     filters:
       - multiply: 2.0
     on_value:
@@ -117,31 +120,31 @@ sensor:
             int mv = (int)(x * 1000.0f);
             id(battery_mv) = mv;
 
-            // Plausibilitäts-Untergrenze (2000 mV) bevor ein Tiefentladeschutz ausgelöst
-            // wird: ein einzelner ADC-Ausreißer/Startwert nahe 0 V soll nicht faelschlich
-            // als "Akku leer" gewertet werden. Idee aus einer frueheren eigenen Config
-            // uebernommen (dort per x > 2.5 && x < 3.30 realisiert).
+            // Plausibility floor (2000 mV) before a deep-discharge protection trips:
+            // a single ADC outlier/startup value near 0V shouldn't be mistaken for
+            // "battery empty". Idea carried over from an earlier config of mine
+            // (there implemented via x > 2.5 && x < 3.30).
             if (mv > 2000 && mv <= ${battery_low_mv}) {
               if (!id(low_battery)) {
                 id(low_battery) = true;
-                ESP_LOGW("battery", "Akku kritisch (%.2f V) - Licht(er) aus!", x);
+                ESP_LOGW("battery", "Battery critical (%.2f V) - turning light(s) off!", x);
                 auto call_a = id(ambient_light).turn_off();
                 call_a.perform();
                 auto call_o = id(outdoor_light).turn_off();
                 call_o.perform();
               }
             } else if (mv <= 2000) {
-              ESP_LOGW("battery", "Unplausibler Messwert (%.2f V) - ADC/Verkabelung pruefen. Tiefentladeschutz NICHT ausgeloest.", x);
+              ESP_LOGW("battery", "Implausible reading (%.2f V) - check ADC/wiring. Deep-discharge protection NOT triggered.", x);
             } else if (mv >= ${battery_recover_mv}) {
               if (id(low_battery)) {
                 id(low_battery) = false;
-                ESP_LOGI("battery", "Akku erholt (%.2f V) - Licht(er) wieder moeglich", x);
-                // Wie im Original: kein Auto-Wiedereinschalten, Nutzer muss aktiv schalten.
+                ESP_LOGI("battery", "Battery recovered (%.2f V) - light(s) available again", x);
+                // Same as the original: no auto re-enable, the user has to switch it back on manually.
               }
             }
 
-            // Spannungskompensation (applyLight()) mit dem frischen Messwert neu anwenden,
-            // falls gerade ein Licht an ist.
+            // Re-apply the voltage compensation (applyLight()) with the fresh
+            // reading, if a light is currently on.
             if (id(ambient_light).current_values.is_on()) {
               id(ambient_light).turn_on().perform();
             }
@@ -149,14 +152,16 @@ sensor:
               id(outdoor_light).turn_on().perform();
             }
 
-  # Ersetzt die ursprünglich lineare mvToPct()-Interpolation durch eine stückweise
-  # Kurve entlang der echten LiPo-Entladekurve (flach in der Mitte, steil nahe leer) -
-  # genau der Punkt, den AGENTS.md unter "linear .. nicht vergleichbar über die Kurve"
-  # als offenes Problem nennt. Stützpunkte sind Richtwerte für eine 1S-LiPo zwischen
-  # BATTERY_EMPTY_MV (3.00 V) und BATTERY_FULL_MV (4.20 V) - nicht multimeter-verifiziert,
-  # bei Bedarf mit echten Messpunkten der eigenen Zelle nachjustieren.
-  # `copy`-Pattern (statt eigenem Template+update_interval) aus einer frueheren eigenen
-  # Config übernommen - aktualisiert automatisch mit jedem neuen battery_voltage-Wert.
+  # Replaces the original linear mvToPct() interpolation with a piecewise curve
+  # that follows the real LiPo discharge curve (flat in the middle, steep near
+  # empty) - exactly the open issue AGENTS.md flags under "linear .. not comparable
+  # across the curve". The breakpoints are rule-of-thumb values for a 1S LiPo
+  # between BATTERY_EMPTY_MV (3.00V) and BATTERY_FULL_MV (4.20V) - not
+  # multimeter-verified, adjust with real measurement points from your own cell if
+  # needed.
+  # The `copy` platform (instead of a custom template + update_interval) is carried
+  # over from an earlier config of mine - updates automatically with every new
+  # battery_voltage value.
   - platform: copy
     source_id: battery_voltage
     name: "Battery Percentage"
@@ -180,9 +185,9 @@ sensor:
           min_value: 0
           max_value: 100
 
-# =============== TREIBER-ENABLE (gemeinsam für beide Kanäle) ===============
-# Entspricht PIN_ENABLE/EEP: LOW = Treiber-Ausgangsstufe (und ihr eigener Ruhestrom) aus.
-# HIGH sobald mindestens ein Licht an ist, LOW sobald beide aus sind.
+# =============== DRIVER ENABLE (shared across both channels) ===============
+# Corresponds to PIN_ENABLE/EEP: LOW = driver output stage (and its own quiescent
+# draw) off. HIGH as soon as at least one light is on, LOW once both are off.
 switch:
   - platform: gpio
     id: driver_enable
@@ -190,29 +195,30 @@ switch:
     internal: true
     restore_mode: ALWAYS_OFF
 
-# =============== PWM-AUSGÄNGE ===============
+# =============== PWM OUTPUTS ===============
 output:
   - platform: ledc
     id: ledc_ambient
     pin: GPIO14
     frequency: 20000 Hz   # PWM_FREQ
-    zero_means_zero: true   # verhindert minimalen Rest-Tastgrad bei 0% (aus frueherer Config übernommen)
+    zero_means_zero: true   # prevents a tiny residual duty cycle at 0% (carried over from an earlier config)
   - platform: ledc
     id: ledc_outdoor
     pin: GPIO15
     frequency: 20000 Hz
     zero_means_zero: true
 
-  # Treiber IN1 (Richtung Outdoor-Kanal) - dauerhaft LOW statt fest auf GND verdrahtet,
-  # weil beide GND-Pads am Treiber schon anderweitig belegt sind. Wird nur einmal beim
-  # Boot auf LOW gesetzt (siehe esphome.on_boot oben) und danach nie mehr angefasst.
+  # Driver IN1 (direction, outdoor channel) - permanently LOW instead of hardwired to
+  # GND, because both GND pads on the driver are already in use elsewhere. Only set
+  # to LOW once at boot (see esphome.on_boot above) and never touched again after
+  # that.
   - platform: gpio
     id: outdoor_dir
     pin: GPIO3
 
-  # Spannungskompensierte Ausgänge, ein Pendant zu applyLight()'s
+  # Voltage-compensated outputs, a counterpart to applyLight()'s
   # `duty = currentBrightness * voltageRatio` (voltageRatio = LED_TARGET_MV / lastBatteryMV,
-  # gedeckelt auf 100% - kein Boost über die Akkuspannung hinaus möglich).
+  # capped at 100% - can't boost above the battery's own voltage).
   - platform: template
     id: pwm_ambient_compensated
     type: float
@@ -230,9 +236,9 @@ output:
           if (ratio > 1.0f) ratio = 1.0f;
           id(ledc_outdoor).set_level(state * ratio);
 
-# =============== LICHTER ===============
-# V0 (Schalter) + V1 (Dimmer 0-100%) sind hier ein einziges dimmbares light-Entity -
-# HA/die Weboberfläche liefern Ein/Aus und Helligkeit ohnehin über dieselbe Entity.
+# =============== LIGHTS ===============
+# V0 (switch) + V1 (dimmer 0-100%) are a single dimmable light entity here - HA/the
+# web UI deliver on/off and brightness through the same entity anyway.
 light:
   - platform: monochromatic
     name: "Ambient Light"
@@ -245,7 +251,7 @@ light:
           condition:
             lambda: 'return id(low_battery);'
           then:
-            - light.turn_off: ambient_light   # Tiefentladeschutz: Einschalten blockieren
+            - light.turn_off: ambient_light   # Deep-discharge protection: block turning on
           else:
             - switch.turn_on: driver_enable
     on_turn_off:
@@ -268,7 +274,7 @@ light:
           condition:
             lambda: 'return id(low_battery);'
           then:
-            - light.turn_off: outdoor_light   # Tiefentladeschutz: Einschalten blockieren
+            - light.turn_off: outdoor_light   # Deep-discharge protection: block turning on
           else:
             - switch.turn_on: driver_enable
     on_turn_off:
@@ -280,11 +286,11 @@ light:
           then:
             - switch.turn_off: driver_enable
 
-# =============== RESET-TASTE (BOOT-Button, PIN_RESET_BTN) ===============
-# 3s halten löscht WLAN-Zugangsdaten und startet neu - entspricht checkResetButton() /
-# WiFiManager::resetSettings() in main.cpp. GPIO9 ist auf dem C6 ein Boot-Strapping-Pin;
-# das ist unkritisch, solange er (wie hier über INPUT_PULLUP) nur beim manuellen Halten
-# aktiv auf LOW gezogen wird, nicht dauerhaft.
+# =============== RESET BUTTON (BOOT button, PIN_RESET_BTN) ===============
+# Holding for 3s erases the WiFi credentials and restarts - corresponds to
+# checkResetButton() / WiFiManager::resetSettings() in main.cpp. GPIO9 is a boot
+# strapping pin on the C6; that's fine as long as it's only pulled LOW (as here, via
+# INPUT_PULLUP) during a deliberate manual hold, not permanently.
 binary_sensor:
   - platform: gpio
     id: reset_button
@@ -302,7 +308,7 @@ binary_sensor:
             condition:
               binary_sensor.is_on: reset_button
             then:
-              - logger.log: "Reset: Loesche WLAN-Daten, starte neu..."
+              - logger.log: "Reset: Erasing WiFi credentials, restarting..."
               - button.press: factory_reset_button
 
 button:
@@ -312,15 +318,16 @@ button:
   - platform: restart
     name: "Restart"
 
-# =============== AUTOMATIK: OUTDOOR LIGHT ===============
-# Aus einer früheren eigenen Config übernommen, hier bewusst nur für Outdoor Light (nicht
-# Ambient Light) - passt zum Namen/Zweck ("outdoor", an der Dämmerung orientiert), während
-# Ambient Light wie bisher rein manuell bleibt. Bei Bedarf einfach dieselben Trigger auch
-# auf ambient_light anwenden.
+# =============== AUTOMATION: OUTDOOR LIGHT ===============
+# Carried over from an earlier config of mine, deliberately only for Outdoor Light
+# here (not Ambient Light) - fits the name/purpose ("outdoor", tied to dusk/dawn),
+# while Ambient Light stays purely manual as before. Apply the same triggers to
+# ambient_light too if needed.
 #
-# time: nutzt hier `sntp` statt `homeassistant` (wie in der alten Config), damit die
-# Zeitplan-Funktion auch ohne verbundenes Home Assistant funktioniert - passend zum
-# `web_server` oben, der das Gerät ausdrücklich auch standalone bedienbar machen soll.
+# time: uses `sntp` here instead of `homeassistant` (as in the old config), so the
+# schedule still works even without Home Assistant connected - matching the
+# `web_server` above, which is explicitly meant to make the device usable standalone
+# too.
 time:
   - platform: sntp
     id: sntp_time
@@ -343,8 +350,8 @@ time:
         then:
           - light.turn_off: outdoor_light
 
-# Koordinaten aus secrets.yaml (nicht im Repo, siehe secrets.yaml.example) - bei Bedarf
-# anpassen, falls das ein anderer Standort ist.
+# Coordinates come from secrets.yaml (not in the repo, see secrets.yaml.example) -
+# adjust if this is a different location.
 sun:
   latitude: !secret location_latitude
   longitude: !secret location_longitude

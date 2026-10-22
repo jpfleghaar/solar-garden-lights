@@ -1,0 +1,131 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 620" role="img" aria-label="Wiring diagram: USB or solar charges only the battery via VIN. The battery powers both the board over JST and, as a separate tap, the H-bridge directly. The board controls the H-bridge only through the logic lines GPIO14 (PWM) and GPIO6 (EEP). The H-bridge's IN3 is hardwired to GND. Battery, board, and H-bridge share one common ground. The H-bridge switches the raw battery voltage through to the LED string.">
+  <defs>
+    <pattern id="graph" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0 L0 0 0 40" fill="none" stroke="#221d15" stroke-opacity="0.06" stroke-width="1"/>
+    </pattern>
+    <marker id="arrowPower" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#a8501a"/>
+    </marker>
+    <marker id="arrowLogic" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#0f6c78"/>
+    </marker>
+    <marker id="arrowGround" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#786c58"/>
+    </marker>
+    <marker id="arrowMuted" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#6d6250"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1120" height="620" fill="#f5f1e8"/>
+  <rect x="0" y="0" width="1120" height="620" fill="url(#graph)"/>
+
+  <!-- Legend -->
+  <g font-family="ui-monospace,'SFMono-Regular',Menlo,monospace" font-size="12.5">
+    <line x1="20" y1="24" x2="42" y2="24" stroke="#a8501a" stroke-width="3"/>
+    <text x="50" y="28" fill="#6d6250">Power path (battery voltage)</text>
+    <line x1="280" y1="24" x2="302" y2="24" stroke="#0f6c78" stroke-width="3"/>
+    <text x="310" y="28" fill="#6d6250">Control signal (GPIO)</text>
+    <line x1="500" y1="24" x2="522" y2="24" stroke="#786c58" stroke-width="2" stroke-dasharray="5,4"/>
+    <text x="530" y="28" fill="#6d6250">Common ground (GND)</text>
+    <line x1="740" y1="24" x2="762" y2="24" stroke="#6d6250" stroke-width="2" stroke-dasharray="2,5"/>
+    <text x="770" y="28" fill="#6d6250">Charging input (independent)</text>
+  </g>
+
+  <!-- Charging source -->
+  <rect x="40" y="60" width="200" height="80" rx="8" fill="#fffdf8" stroke="#d9cdb4"/>
+  <text x="140" y="95" text-anchor="middle" font-family="ui-monospace,monospace" font-size="12.5" fill="#221d15">USB-C / 5V /</text>
+  <text x="140" y="113" text-anchor="middle" font-family="ui-monospace,monospace" font-size="12.5" fill="#221d15">Solar Panel</text>
+
+  <!-- VIN line (charging only) -->
+  <line x1="240" y1="100" x2="316" y2="100" stroke="#6d6250" stroke-width="2" stroke-dasharray="2,5" marker-end="url(#arrowMuted)"/>
+  <text x="278" y="86" text-anchor="middle" font-family="ui-monospace,monospace" font-size="11.5" fill="#6d6250">VIN &#183; charging only</text>
+
+  <!-- Board -->
+  <rect x="320" y="60" width="240" height="200" rx="8" fill="#fffdf8" stroke="#d9cdb4"/>
+  <text x="440" y="85" text-anchor="middle" font-family="system-ui,sans-serif" font-weight="600" font-size="14" fill="#221d15">FireBeetle ESP32-C6</text>
+  <text x="440" y="103" text-anchor="middle" font-family="ui-monospace,monospace" font-size="10.5" fill="#6d6250">Board</text>
+  <text x="336" y="124" font-family="ui-monospace,monospace" font-size="11.5" fill="#6d6250">3V3 &#8594; logic only (unused here)</text>
+  <text x="336" y="216" font-family="ui-monospace,monospace" font-size="11.5" fill="#6d6250">GND</text>
+  <text x="544" y="124" text-anchor="end" font-family="ui-monospace,monospace" font-size="12" fill="#221d15">GPIO14</text>
+  <text x="544" y="184" text-anchor="end" font-family="ui-monospace,monospace" font-size="12" fill="#221d15">GPIO6</text>
+  <circle cx="320" cy="100" r="4" fill="#6d6250"/>
+  <circle cx="560" cy="120" r="4" fill="#0f6c78"/>
+  <circle cx="560" cy="180" r="4" fill="#0f6c78"/>
+  <circle cx="400" cy="260" r="4" fill="#786c58"/>
+  <circle cx="340" cy="260" r="4" fill="#a8501a"/>
+
+  <!-- Battery -->
+  <rect x="40" y="340" width="200" height="100" rx="8" fill="#fffdf8" stroke="#d9cdb4"/>
+  <text x="140" y="375" text-anchor="middle" font-family="system-ui,sans-serif" font-weight="600" font-size="14" fill="#221d15">LiPo Battery</text>
+  <text x="140" y="393" text-anchor="middle" font-family="ui-monospace,monospace" font-size="11" fill="#6d6250">3.7V &#183; 5000 mAh</text>
+  <text x="228" y="356" text-anchor="end" font-family="ui-monospace,monospace" font-size="12" fill="#a8501a">+</text>
+  <text x="228" y="424" text-anchor="end" font-family="ui-monospace,monospace" font-size="12" fill="#786c58">&#8722;</text>
+  <circle cx="240" cy="360" r="4" fill="#a8501a"/>
+  <circle cx="240" cy="420" r="4" fill="#786c58"/>
+
+  <!-- JST: battery+ -> board (bottom) -->
+  <polyline points="240,360 300,360 300,260 336,260" fill="none" stroke="#a8501a" stroke-width="2.5" marker-end="url(#arrowPower)"/>
+  <text x="248" y="248" font-family="ui-monospace,monospace" font-size="11" fill="#a8501a">JST (board-internal)</text>
+
+  <!-- Battery+ raw -> H-bridge VCC/VM -->
+  <polyline points="300,360 620,360 620,310 676,310" fill="none" stroke="#a8501a" stroke-width="3" marker-end="url(#arrowPower)"/>
+  <text x="440" y="350" text-anchor="middle" font-family="ui-monospace,monospace" font-size="12" fill="#a8501a" font-weight="600">Battery+ (raw tap)</text>
+
+  <!-- GPIO14 -> IN4 -->
+  <polyline points="560,120 620,120 620,160 676,160" fill="none" stroke="#0f6c78" stroke-width="2" marker-end="url(#arrowLogic)"/>
+  <text x="626" y="148" font-family="ui-monospace,monospace" font-size="11.5" fill="#0f6c78">PWM</text>
+
+  <!-- GPIO6 -> EEP -->
+  <polyline points="560,180 640,180 640,210 676,210" fill="none" stroke="#0f6c78" stroke-width="2" marker-end="url(#arrowLogic)"/>
+  <text x="646" y="202" font-family="ui-monospace,monospace" font-size="11.5" fill="#0f6c78">EEP</text>
+
+  <!-- Board GND -> bus -->
+  <line x1="400" y1="260" x2="400" y2="540" stroke="#786c58" stroke-width="2" stroke-dasharray="5,4"/>
+
+  <!-- Battery- -> bus -->
+  <line x1="240" y1="420" x2="240" y2="540" stroke="#786c58" stroke-width="2" stroke-dasharray="5,4"/>
+
+  <!-- H-bridge -->
+  <rect x="680" y="100" width="240" height="280" rx="8" fill="#fffdf8" stroke="#d9cdb4"/>
+  <text x="800" y="125" text-anchor="middle" font-family="system-ui,sans-serif" font-weight="600" font-size="14" fill="#221d15">H-Bridge</text>
+  <text x="800" y="142" text-anchor="middle" font-family="ui-monospace,monospace" font-size="10.5" fill="#6d6250">4-channel driver</text>
+  <text x="696" y="164" font-family="ui-monospace,monospace" font-size="12" fill="#221d15">IN4</text>
+  <text x="696" y="214" font-family="ui-monospace,monospace" font-size="12" fill="#221d15">EEP</text>
+  <text x="696" y="264" font-family="ui-monospace,monospace" font-size="12" fill="#221d15">IN3</text>
+  <text x="696" y="314" font-family="ui-monospace,monospace" font-size="12" fill="#a8501a">VCC/VM</text>
+  <text x="740" y="372" font-family="ui-monospace,monospace" font-size="11" fill="#6d6250">GND</text>
+  <text x="904" y="164" text-anchor="end" font-family="ui-monospace,monospace" font-size="12" fill="#a8501a">OUT4</text>
+  <text x="904" y="304" text-anchor="end" font-family="ui-monospace,monospace" font-size="12" fill="#a8501a">OUT3</text>
+  <circle cx="680" cy="160" r="4" fill="#0f6c78"/>
+  <circle cx="680" cy="210" r="4" fill="#0f6c78"/>
+  <circle cx="680" cy="260" r="4" fill="#786c58"/>
+  <circle cx="680" cy="310" r="4" fill="#a8501a"/>
+  <circle cx="760" cy="380" r="4" fill="#786c58"/>
+  <circle cx="920" cy="170" r="4" fill="#a8501a"/>
+  <circle cx="920" cy="310" r="4" fill="#a8501a"/>
+
+  <!-- IN3 -> bus -->
+  <line x1="680" y1="260" x2="680" y2="540" stroke="#786c58" stroke-width="2" stroke-dasharray="5,4"/>
+  <text x="686" y="500" font-family="ui-monospace,monospace" font-size="11" fill="#786c58">IN3 hardwired to GND</text>
+
+  <!-- H-bridge GND -> bus -->
+  <line x1="760" y1="380" x2="760" y2="540" stroke="#786c58" stroke-width="2" stroke-dasharray="5,4"/>
+
+  <!-- GND bus -->
+  <line x1="180" y1="540" x2="820" y2="540" stroke="#786c58" stroke-width="2" stroke-dasharray="5,4"/>
+  <text x="500" y="566" text-anchor="middle" font-family="ui-monospace,monospace" font-size="12" fill="#786c58" font-weight="600">Common Ground (GND)</text>
+
+  <!-- LED string -->
+  <rect x="980" y="130" width="120" height="220" rx="8" fill="#fffdf8" stroke="#d9cdb4"/>
+  <text x="1040" y="190" text-anchor="middle" font-family="system-ui,sans-serif" font-weight="600" font-size="13" fill="#221d15">LED</text>
+  <text x="1040" y="208" text-anchor="middle" font-family="system-ui,sans-serif" font-weight="600" font-size="13" fill="#221d15">String</text>
+  <text x="996" y="174" font-family="ui-monospace,monospace" font-size="11" fill="#a8501a">+</text>
+  <text x="996" y="314" font-family="ui-monospace,monospace" font-size="11" fill="#a8501a">&#8722;</text>
+  <circle cx="980" cy="170" r="4" fill="#a8501a"/>
+  <circle cx="980" cy="310" r="4" fill="#a8501a"/>
+
+  <!-- OUT4 -> LED+, OUT3 -> LED- -->
+  <line x1="920" y1="170" x2="976" y2="170" stroke="#a8501a" stroke-width="3" marker-end="url(#arrowPower)"/>
+  <line x1="920" y1="310" x2="976" y2="310" stroke="#a8501a" stroke-width="3" marker-end="url(#arrowPower)"/>
+</svg>

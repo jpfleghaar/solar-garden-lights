@@ -1,53 +1,51 @@
 # Solar Garden Lights
 
-WLAN-gesteuerte, akkubetriebene Garten-/Außenbeleuchtung (LED-Lichterkette) auf Basis eines ESP32-C6. Gedimmt wird per PWM über ein H-Brücken-Treibermodul, gesteuert aktuell über **ESPHome** (lokale Web-UI + optionale Home-Assistant-Integration) — Solarladung ist das langfristige Ziel, aktuell lädt der Akku per USB.
+WiFi-controlled, battery-powered garden/outdoor lighting (LED string) built on an ESP32-C6. Dimmed via PWM through an H-bridge driver module, currently controlled by **ESPHome** (local web UI + optional Home Assistant integration) — solar charging is the long-term goal, the battery currently charges over USB.
 
-## Überblick
+## Overview
 
-- **Board:** DFRobot FireBeetle 2 ESP32-C6, mit Onboard-LiPo-Laderegler am JST-Akkuanschluss
-- **Akku:** 1S-LiPo, 5000 mAh, eigenes BMS (Überladung/Tiefentladung geschützt)
-- **Last:** LED-Lichterkette (reine DC-Last, kein Motor), angesteuert über einen 4-Kanal-H-Brücken-Treiber, rein zum PWM-Dimmen genutzt
-- **Steuerung:** aktuell über ESPHome (`esphome/gardenlights.yaml`) — zwei dimmbare Lichter ("Ambient Light", "Outdoor Light"), Akku-Tiefentladeschutz, Sonnenstand-/Zeit-Automatik, Fallback-Hotspot bei WLAN-Ausfall
-- Es gibt zwei getrennte PWM-Kanäle (Ambient + Outdoor), nicht nur einen wie in der ursprünglichen Version
+- **Board:** DFRobot FireBeetle 2 ESP32-C6, with an onboard LiPo charge circuit on the JST battery connector
+- **Battery:** 1S LiPo, 5000 mAh, own BMS (overcharge/overdischarge protected)
+- **Load:** LED string (pure DC load, not a motor), driven through a 4-channel H-bridge driver, used purely for PWM dimming
+- **Control:** currently via ESPHome (`esphome/gardenlights.yaml`) — two dimmable lights ("Ambient Light", "Outdoor Light"), battery low-voltage cutoff, sunset/time automation, fallback hotspot on WiFi failure
+- There are two separate PWM channels (Ambient + Outdoor), not just one like in the original version
 
-## Firmware-Historie
+## Firmware History
 
-Die aktuelle Firmware ist **ESPHome** (`esphome/gardenlights.yaml`). Davor gab es eine PlatformIO/Arduino-Variante mit Steuerung über die Blynk-App (ein Lichtkanal statt zwei) — dieser Code wurde aus dem Repo entfernt.
+The current firmware is **ESPHome** (`esphome/gardenlights.yaml`). Before that there was a PlatformIO/Arduino variant controlled through the Blynk app (one light channel instead of two) — that code has been removed from the repo.
 
-## Verkabelung
+## Wiring
 
-Ein vollständiges Verkabelungsdiagramm (Steuersignale, Treiber-Stromversorgung, Masse) liegt unter [`docs/verkabelung.html`](docs/verkabelung.html).
+A full wiring diagram (control signals, driver power supply, ground) is at [`docs/wiring.md`](docs/wiring.md).
 
-> GitHub zeigt den Inhalt von `.html`-Dateien nicht interaktiv in der Dateivorschau an. Zum Ansehen die Datei herunterladen und lokal im Browser öffnen, oder GitHub Pages für dieses Repo aktivieren (Settings → Pages → Branch `main`, Ordner `/docs`) — dann ist sie unter `https://<user>.github.io/<repo>/verkabelung.html` erreichbar.
+Pinout summary (see the diagram for details):
 
-Kurzfassung der Pinbelegung (Details siehe Diagramm):
-
-| Signal | Pin | Ziel |
+| Signal | Pin | Target |
 |---|---|---|
-| PWM Ambient | GPIO14 | Treiber IN4 → Ambient-LED-Kette |
-| PWM Outdoor | GPIO15 | Treiber IN2 → Outdoor-LED-Kette |
-| Treiber Enable/Standby | GPIO6 | Treiber EEP |
-| Akku-Spannung (ADC) | GPIO0 | Spannungsteiler am Akku |
-| WLAN-Reset-Taste | GPIO9 | BOOT-Taste, gegen GND |
+| PWM Ambient | GPIO14 | Driver IN4 → Ambient LED string |
+| PWM Outdoor | GPIO15 | Driver IN2 → Outdoor LED string |
+| Driver enable/standby | GPIO6 | Driver EEP |
+| Battery voltage (ADC) | GPIO0 | Voltage divider on the battery |
+| WiFi reset button | GPIO9 | BOOT button, to GND |
 
-Die Treiber-Stromversorgung (VCC/VM) kommt direkt von einer Abzweigung an den rohen Akku-Leitungen — **nicht** über `VIN` (nur Ladeeingang) oder `3V3` (feste Spannung, würde die Akku-Spannungskompensation im Dimmen unterlaufen).
+The driver's power supply (VCC/VM) comes directly from a tap on the raw battery leads — **not** via `VIN` (charging input only) or `3V3` (fixed voltage, would defeat the battery voltage compensation used for dimming).
 
-**Noch nicht kalibriert:** Der Akku-Spannungsteiler (`*2`-Faktor in der ESPHome-Config) und die Ziel-LED-Spannung (`led_target_mv`, aktuell 3500 mV) sind noch nicht mit einem Multimeter gegengeprüft.
+**Not yet calibrated:** the battery voltage divider (`*2` factor in the ESPHome config) and the target LED voltage (`led_target_mv`, currently 3500 mV) haven't been cross-checked with a multimeter yet.
 
 ## Setup (ESPHome)
 
-1. [ESPHome](https://esphome.io/) installieren (CLI oder Home-Assistant-Add-on)
-2. `esphome/secrets.yaml.example` nach `esphome/secrets.yaml` kopieren und die Platzhalter ausfüllen (WLAN-Zugangsdaten, API-Verschlüsselungskey, OTA-Passwort, Hotspot-Passwort, Standort-Koordinaten für die Sonnenstand-Automatik). Diese Datei ist in `.gitignore` eingetragen und wird nie committed.
-3. Flashen: `esphome run esphome/gardenlights.yaml`
-4. Danach läuft das Gerät auch ohne Home Assistant über seinen eingebauten Web-Server; die native API ist optional für die HA-Integration.
+1. Install [ESPHome](https://esphome.io/) (CLI or the Home Assistant add-on)
+2. Copy `esphome/secrets.yaml.example` to `esphome/secrets.yaml` and fill in the placeholders (WiFi credentials, API encryption key, OTA password, hotspot password, location coordinates for the sunset automation). This file is listed in `.gitignore` and never gets committed.
+3. Flash it: `esphome run esphome/gardenlights.yaml`
+4. The device then also runs without Home Assistant via its built-in web server; the native API is only needed for the HA integration.
 
-## Bekannte offene Punkte
+## Known Open Issues
 
-- Akku-Gesundheit war zuletzt fraglich (Einzelzelle maß isoliert 2,33 V — unter dem BMS-Schwellwert); vor weiteren Drain-Tests erst Akku-Zustand prüfen
-- Spannungsteiler- und LED-Zielspannungs-Kalibrierung steht noch aus
-- Treiber-Modell/Datenblatt ist nicht eindeutig bestätigt
+- Battery health was questionable as of the last check (a single cell measured 2.33V in isolation — below the BMS threshold); confirm battery condition before running further drain tests
+- Voltage-divider and target-LED-voltage calibration is still outstanding
+- The exact driver model/datasheet hasn't been confirmed
 
 ## Build & Tools
 
-- ESPHome-Config: `esphome run esphome/gardenlights.yaml` (bzw. über die ESPHome-Dashboard-UI)
-- Serial-Monitor-Baudrate: `115200`
+- ESPHome config: `esphome run esphome/gardenlights.yaml` (or via the ESPHome dashboard UI)
+- Serial monitor baud rate: `115200`

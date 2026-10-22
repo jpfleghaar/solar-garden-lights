@@ -1,6 +1,7 @@
 .pio
 .vscode/
 AGENTS.md
+include/secrets.h
 esphome/secrets.yaml
 esphome/.esphome/
 sdkconfig.esp32-c6-devkitc-1
